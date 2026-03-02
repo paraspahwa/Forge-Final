@@ -1,0 +1,87 @@
+version: '3.8'
+services:
+  api:
+    build: 
+      context: ./services/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL_=postgresql+asyncpg://postgres:postgres:db:5432/animeforge
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./services/api:/app
+      - /app/__pycache__
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      -animeforge-network
+  db: 
+    image: postgres:15-alpine
+    enviroment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=animeforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - animeforge-network
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - animeforge-network
+  worker:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL_=postgresql+asyncpg://postgres:postgres:db:5432/animeforge
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+      - api
+    volumes:
+      - ./services/api:/app
+      - /app/__pycache__
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
+    networks:
+      - animeforge-network
+  beat:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL_=postgresql+asyncpg://postgres:postgres:db:5432/animeforge
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    volumes:
+      - ./services/api:/app
+      - /app/__pycache__
+    command: celery -A app.core.celery_app beat --loglevel=info 
+    networks:
+      - animeforge-network
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  animeforge-network:
+    driver: bridge
