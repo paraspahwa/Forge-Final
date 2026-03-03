@@ -6,7 +6,16 @@ import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -38,7 +47,7 @@ class User(Base):
     # Country & Pricing (PPP)
     country_code = Column(String(2), default="US", index=True)
     detected_country = Column(String(2), nullable=True)
-    detected_ip = Column(String(45), nullable=True)  # IPv6 max length
+    detected_ip = Column(String(45), nullable=True)
     
     # Subscription
     tier = Column(Enum(UserTier), default=UserTier.FREE, index=True)
@@ -52,7 +61,7 @@ class User(Base):
     videos_generated_this_month = Column(Integer, default=0)
     anime_videos_this_month = Column(Integer, default=0)
     realistic_videos_this_month = Column(Integer, default=0)
-    videos_limit = Column(Integer, default=4)  # 3 anime + 1 realistic for free
+    videos_limit = Column(Integer, default=4)
     
     # Preferences
     preferred_character_type = Column(String(20), default="anime")
@@ -90,6 +99,11 @@ class User(Base):
         lazy="selectin",
     )
     
+    # Table indexes
+    __table_args__ = (
+        Index('idx_user_country_tier', 'country_code', 'tier'),
+    )
+    
     def __repr__(self):
         return f"<User {self.email} ({self.country_code}, {self.tier.value})>"
     
@@ -113,14 +127,14 @@ class User(Base):
         
         if include_relations:
             data["avatars"] = [a.to_dict() for a in self.avatars]
-            data["videos"] = [v.to_dict() for v in self.videos[:10]]  # Last 10
+            data["videos"] = [v.to_dict() for v in self.videos[:10]]
         
         return data
     
     def can_generate_video(self, character_type: str = "anime") -> bool:
         """Check if user can generate another video this month"""
         if self.tier == UserTier.AGENCY:
-            return True  # Unlimited
+            return True
         
         total_used = self.videos_generated_this_month
         return total_used < self.videos_limit

@@ -6,7 +6,18 @@ import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON, 
+    Column, 
+    DateTime, 
+    Enum, 
+    ForeignKey, 
+    Integer, 
+    String, 
+    Text, 
+    Index,
+    Boolean,  # ADDED THIS IMPORT
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -22,12 +33,6 @@ class CharacterType(str, PyEnum):
 class Avatar(Base):
     """Avatar model"""
     __tablename__ = "avatars"
-    __table_args__ = (
-        # Index for faster queries by user and type
-        {"postgresql_indexes": [
-            {"name": "idx_avatar_user_type", "columns": ["user_id", "character_type"]},
-        ]}
-    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -40,27 +45,11 @@ class Avatar(Base):
     description = Column(Text, nullable=True)
     slug = Column(String(100), nullable=True, unique=True)
     
-    # Appearance details (flexible JSON)
+    # Appearance details
     appearance = Column(JSON, default=dict)
-    # Example: {
-    #   "hair_color": "blue",
-    #   "hair_style": "long",
-    #   "eye_color": "green",
-    #   "outfit": "school uniform",
-    #   "age_appearance": "teen",
-    #   "ethnicity": "asian",  # for realistic
-    #   "style": "chibi",  # for anime
-    # }
     
     # Expression images (URLs)
     expressions = Column(JSON, default=dict, nullable=False)
-    # {
-    #   "happy": "https://.../happy.png",
-    #   "sad": "https://.../sad.png",
-    #   "angry": "https://.../angry.png",
-    #   "surprised": "https://.../surprised.png",
-    #   "neutral": "https://.../neutral.png"
-    # }
     
     # Generation metadata
     generation_prompt = Column(Text, nullable=True)
@@ -69,11 +58,11 @@ class Avatar(Base):
     generation_model = Column(String(50), default="segmind")
     
     # Stats
-    usage_count = Column(Integer, default=0)  # How many videos used this avatar
+    usage_count = Column(Integer, default=0)
     is_favorite = Column(Boolean, default=False)
     
     # Status
-    status = Column(String(20), default="active")  # active, archived, deleted
+    status = Column(String(20), default="active")
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -83,6 +72,11 @@ class Avatar(Base):
     # Relationships
     user = relationship("User", back_populates="avatars")
     videos = relationship("Video", back_populates="avatar")
+    
+    # Table indexes
+    __table_args__ = (
+        Index('idx_avatar_user_type', 'user_id', 'character_type'),
+    )
     
     def __repr__(self):
         return f"<Avatar {self.name} ({self.character_type.value}, {self.user_id})>"
@@ -113,7 +107,6 @@ class Avatar(Base):
         emotion = emotion.lower()
         if emotion in self.expressions:
             return self.expressions[emotion]
-        # Fallback to neutral
         return self.expressions.get("neutral", "")
     
     def get_all_expressions(self) -> list:

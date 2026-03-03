@@ -3,6 +3,8 @@ Celery configuration for background tasks
 """
 
 from celery import Celery
+from datetime import timedelta
+from celery.schedules import crontab
 from celery.signals import task_prerun, task_postrun
 
 from app.core.config import settings
@@ -32,8 +34,8 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=600,  # 10 minutes max
     task_soft_time_limit=540,  # 9 minutes soft limit
-    worker_prefetch_multiplier=1,  # Don't prefetch tasks
-    worker_max_tasks_per_child=50,  # Restart worker after 50 tasks
+    worker_prefetch_multiplier=1,
+    worker_max_tasks_per_child=50,
 )
 
 
@@ -53,10 +55,10 @@ def task_postrun_handler(task_id, task, args, kwargs, retval, state, **extras):
 celery_app.conf.beat_schedule = {
     "reset-monthly-quotas": {
         "task": "app.tasks.notifications.reset_monthly_quotas",
-        "schedule": "0 0 1 * *",  # First day of month at midnight
+        "schedule": crontab(day_of_month=1, hour=0, minute=0),
     },
     "cleanup-old-videos": {
         "task": "app.tasks.notifications.cleanup_old_videos",
-        "schedule": 86400.0,  # Daily
+        "schedule": timedelta(seconds=86400),  # Alternative syntax
     },
 }

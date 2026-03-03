@@ -6,7 +6,17 @@ import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON, 
+    Column, 
+    DateTime, 
+    Enum, 
+    ForeignKey, 
+    Integer, 
+    String, 
+    Text, 
+    Index,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -30,12 +40,6 @@ class VideoStatus(str, PyEnum):
 class Video(Base):
     """Video model"""
     __tablename__ = "videos"
-    __table_args__ = (
-        {"postgresql_indexes": [
-            {"name": "idx_video_user_status", "columns": ["user_id", "status"]},
-            {"name": "idx_video_created", "columns": ["created_at"]},
-        ]}
-    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -47,35 +51,28 @@ class Video(Base):
     slug = Column(String(100), nullable=True, unique=True)
     
     # Character type used
-    character_type = Column(String(20), nullable=False)  # anime or realistic
+    character_type = Column(String(20), nullable=False)
     
     # Source content
     story_text = Column(Text, nullable=True)
-    story_prompt = Column(Text, nullable=True)  # AI-generated or user prompt
-    scenes = Column(JSON, default=list)  # Parsed scenes array
+    story_prompt = Column(Text, nullable=True)
+    scenes = Column(JSON, default=list)
     
     # Generation configuration
     config = Column(JSON, default=dict)
-    # {
-    #   "voice_gender": "female",
-    #   "voice_speed": 1.0,
-    #   "background_music": false,
-    #   "video_quality": "1080p",
-    #   "effects": ["zoom_in", "pan_left"]
-    # }
     
     # Generation status
     status = Column(Enum(VideoStatus), default=VideoStatus.PENDING, index=True)
-    progress = Column(Integer, default=0)  # 0-100
+    progress = Column(Integer, default=0)
     
     # Current task info
-    current_task = Column(String(100), nullable=True)  # e.g., "generating_scene_3"
-    task_message = Column(Text, nullable=True)  # User-friendly status message
+    current_task = Column(String(100), nullable=True)
+    task_message = Column(Text, nullable=True)
     
     # Output files
     video_url = Column(String(500), nullable=True)
-    video_duration = Column(Integer, default=0)  # seconds
-    video_size = Column(Integer, default=0)  # bytes
+    video_duration = Column(Integer, default=0)
+    video_size = Column(Integer, default=0)
     video_format = Column(String(10), default="mp4")
     video_quality = Column(String(10), default="1080p")
     
@@ -83,13 +80,13 @@ class Video(Base):
     
     # Audio
     audio_url = Column(String(500), nullable=True)
-    voice_used = Column(String(50), nullable=True)  # e.g., "en-US-AriaNeural"
+    voice_used = Column(String(50), nullable=True)
     
-    # Scene assets (intermediate files)
-    scene_assets = Column(JSON, default=list)  # Array of scene file URLs
+    # Scene assets
+    scene_assets = Column(JSON, default=list)
     
     # Social media
-    posted_to = Column(JSON, default=list)  # ["tiktok", "youtube"]
+    posted_to = Column(JSON, default=list)
     scheduled_post = Column(DateTime, nullable=True)
     
     # Error handling
@@ -104,12 +101,18 @@ class Video(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    started_at = Column(DateTime, nullable=True)  # When generation started
+    started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="videos")
     avatar = relationship("Avatar", back_populates="videos")
+    
+    # Table indexes
+    __table_args__ = (
+        Index('idx_video_user_status', 'user_id', 'status'),
+        Index('idx_video_created', 'created_at'),
+    )
     
     def __repr__(self):
         return f"<Video {self.title} ({self.status.value}, {self.user_id})>"

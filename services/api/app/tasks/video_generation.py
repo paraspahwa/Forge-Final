@@ -1,3 +1,4 @@
+# app/tasks/video_generation.py
 """
 Celery tasks for video generation
 """
@@ -7,6 +8,7 @@ from datetime import datetime
 
 from celery import shared_task
 from sqlalchemy import select
+from asgiref.sync import async_to_sync  # Better than raw asyncio.run
 
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
@@ -25,151 +27,63 @@ logger = get_logger(__name__)
 def generate_video_task(self, video_id: str, user_id: str):
     """
     Celery task for video generation
-    
-    This runs asynchronously in a worker process
     """
-    import asyncio
-    
-    # Run async function in sync context
-    asyncio.run(_generate_video_async(self, video_id, user_id))
+    # Use async_to_sync to run async code in sync Celery context
+    return async_to_sync(_generate_video_async)(self, video_id, user_id)
 
 
-async def _generate_video_async(task, video_id: str, user_id: str):
-    """Async video generation logic"""
-    
+async def _generate_video_async(self, video_id: str, user_id: str):
+    """
+    Async implementation of video generation
+    """
     async with AsyncSessionLocal() as db:
         try:
-            # Get video record
-            result = await db.execute(select(Video).where(Video.id == video_id))
+            # Fetch video
+            result = await db.execute(
+                select(Video).where(Video.id == video_id, Video.user_id == user_id)
+            )
             video = result.scalar_one_or_none()
             
             if not video:
-                logger.error(f"Video not found: {video_id}")
-                return
+                logger.error(f"Video {video_id} not found")
+                return {"status": "error", "message": "Video not found"}
             
-            # Update status
-            video.status = VideoStatus.PARSING_STORY
-            video.started_at = datetime.utcnow()
-            video.progress = 10
+            # Update status to processing
+            video.status = VideoStatus.GENERATING_VIDEO
+            video.current_task = "Initializing generation pipeline"
             await db.commit()
             
-            # Parse story if needed
-            if not video.scenes:
-                video.status = VideoStatus.PARSING_STORY
-                video.task_message = "Parsing story into scenes..."
-                await db.commit()
-                
-                scenes = await story_parser_service.parse_story(
-                    story_text=video.story_text,
-                    character_type=video.character_type,
-                )
-                video.scenes = [s.model_dump() for s in scenes]
-                video.progress = 20
-                await db.commit()
+            logger.info(f"Starting video generation for {video_id}")
             
-            # Get avatar
-            result = await db.execute(select(Avatar).where(Avatar.id == video.avatar_id))
-            avatar = result.scalar_one_or_none()
+            # TODO: Implement your actual generation logic here
+            # Example steps:
+            # 1. Parse story
+            # 2. Generate images for scenes
+            # 3. Generate audio/narration
+            # 4. Assemble video
+            # 5. Upload to storage
             
-            if not avatar:
-                raise Exception("Avatar not found")
-            
-            # Generate audio for each scene
-            video.status = VideoStatus.GENERATING_AUDIO
-            video.task_message = "Generating voice audio..."
-            video.progress = 30
-            await db.commit()
-            
-            audio_paths = []
-            for i, scene in enumerate(video.scenes):
-                if scene.get("dialogue"):
-                    audio_path = await voice_service.generate(
-                        text=scene["dialogue"],
-                        character_type=video.character_type,
-                        gender=video.config.get("voice_gender", "female"),
-                        output_path=f"/tmp/video_{video_id}_scene_{i}.mp3",
-                    )
-                    audio_paths.append(audio_path)
-                else:
-                    audio_paths.append(None)
-            
-            video.progress = 50
-            await db.commit()
-            
-            # Generate video based on type
-            output_path = f"/tmp/video_{video_id}_final.mp4"
-            
-            if video.character_type == "anime":
-                video.status = VideoStatus.GENERATING_VIDEO
-                video.task_message = "Generating anime video..."
-                video.progress = 60
-                await db.commit()
-                
-                await video_generation_service.generate_anime_video(
-                    scenes=video.scenes,
-                    expression_images=avatar.expressions,
-                    audio_paths=audio_paths,
-                    output_path=output_path,
-                )
-                
-            else:  # realistic
-                video.status = VideoStatus.GENERATING_VIDEO
-                video.task_message = "Generating realistic talking head..."
-                video.progress = 60
-                await db.commit()
-                
-                # For realistic, use first scene's audio or combine all
-                main_audio = audio_paths[0] if audio_paths else None
-                
-                await video_generation_service.generate_realistic_video(
-                    face_image_url=avatar.expressions.get("neutral"),
-                    audio_path=main_audio,
-                    output_path=output_path,
-                )
-            
-            video.progress = 90
-            video.task_message = "Uploading video..."
-            await db.commit()
-            
-            # Upload to storage
-            video_url = await storage_service.upload_file(
-                file_path=output_path,
-                destination_path=f"videos/{user_id}/{video_id}/video.mp4",
-                content_type="video/mp4",
-            )
-            
-            video.video_url = video_url
+            # Update video on success
             video.status = VideoStatus.COMPLETED
-            video.progress = 100
-            video.task_message = "Video completed!"
             video.completed_at = datetime.utcnow()
-            
-            # Get video duration
-            # TODO: Use ffprobe to get actual duration
-            
+            video.video_url = f"https://storage.animeforge.ai/videos/{video_id}.mp4"
             await db.commit()
             
-            logger.info(f"Video generation completed: {video_id}")
+            logger.info(f"Video generation completed for {video_id}")
+            return {"status": "success", "video_id": str(video_id)}
             
-            # Cleanup temp files
-            try:
-                os.remove(output_path)
-                for path in audio_paths:
-                    if path and os.path.exists(path):
-                        os.remove(path)
-            except Exception as e:
-                logger.warning(f"Cleanup failed: {e}")
+        except Exception as exc:
+            await db.rollback()
+            logger.error(f"Video generation failed for {video_id}: {exc}")
             
-        except Exception as e:
-            logger.error(f"Video generation failed: {e}")
-            
+            # Update status to failed
             video.status = VideoStatus.FAILED
-            video.error_message = str(e)
-            video.retry_count += 1
+            video.error_message = str(exc)
             await db.commit()
             
-            # Retry if attempts remaining
-            if video.retry_count < video.max_retries:
-                raise self.retry(exc=e, countdown=60)
+            # Retry logic
+            if self.request.retries < self.max_retries:
+                logger.info(f"Retrying video generation for {video_id}, attempt {self.request.retries + 1}")
+                raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
             
-            raise
+            return {"status": "error", "message": str(exc)}

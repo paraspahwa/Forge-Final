@@ -5,7 +5,16 @@ Subscription model for tracking payment history
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, Numeric
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    Index,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -26,9 +35,9 @@ class Subscription(Base):
     razorpay_invoice_id = Column(String(255), nullable=True)
     
     # Plan info
-    plan = Column(String(50), nullable=False)  # starter, creator, pro, agency
-    status = Column(String(50), nullable=False)  # active, cancelled, completed
-    currency = Column(String(3), nullable=False)  # INR, USD, etc.
+    plan = Column(String(50), nullable=False)
+    status = Column(String(50), nullable=False)
+    currency = Column(String(3), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
     
     # Period
@@ -50,6 +59,11 @@ class Subscription(Base):
     
     # Relationships
     user = relationship("User", back_populates="subscriptions")
+    
+    # Table indexes
+    __table_args__ = (
+        Index('idx_subscription_razorpay', 'razorpay_subscription_id'),
+    )
     
     def to_dict(self):
         """Convert to dictionary"""

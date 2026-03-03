@@ -1,14 +1,17 @@
-version: '3.8'
+# Remove the 'version' line - it's obsolete in Docker Compose v2
+
 services:
   api:
-    build: 
+    build:
       context: ./services/api
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL_=postgresql+asyncpg://postgres:postgres:db:5432/animeforge
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/animeforge
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     env_file:
       - .env.example
     depends_on:
@@ -20,7 +23,8 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - animeforge-network
-  db: 
+
+  db:
     image: postgres:15-alpine
     environment:
       - POSTGRES_USER=postgres
@@ -32,6 +36,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - animeforge-network
+
   redis:
     image: redis:7-alpine
     ports:
@@ -40,14 +45,16 @@ services:
       - redis_data:/data
     networks:
       - animeforge-network
+
   worker:
     build:
       context: ./services/api
       dockerfile: Dockerfile
     environment:
-      - DATABASE_URL_=postgresql+asyncpg://postgres:postgres:db:5432/animeforge
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/animeforge
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     env_file:
       - .env.example
     depends_on:
@@ -60,14 +67,16 @@ services:
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
     networks:
       - animeforge-network
+
   beat:
     build:
       context: ./services/api
       dockerfile: Dockerfile
     environment:
-      - DATABASE_URL_=postgresql+asyncpg://postgres:postgres:db:5432/animeforge
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/animeforge
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     env_file:
       - .env.example
     depends_on:
@@ -75,9 +84,10 @@ services:
     volumes:
       - ./services/api:/app
       - /app/__pycache__
-    command: celery -A app.core.celery_app beat --loglevel=info 
+    command: celery -A app.core.celery_app beat --loglevel=info
     networks:
       - animeforge-network
+
 volumes:
   postgres_data:
   redis_data:
@@ -85,3 +95,4 @@ volumes:
 networks:
   animeforge-network:
     driver: bridge
+
